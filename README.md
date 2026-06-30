@@ -1,4 +1,4 @@
-# Human3D — Video to SMPL-X Pose Reconstruction
+# Human3D - Video to SMPL-X Pose Reconstruction
 
 Human3D reconstructs 3D human body pose and shape from monocular RGB video. It detects 2D/3D body landmarks with MediaPipe Pose, then fits the SMPL-X parametric body model to those landmarks frame-by-frame using a custom genetic algorithm (GA) optimizer.
 
