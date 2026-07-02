@@ -7,7 +7,7 @@ import numpy as np
 
 import time
 
-BASE_DIR    = Path("d:/Disseratation/Human3D")
+BASE_DIR    = Path("C:/Users/user/Desktop/Mariya/projects/compv/Human3D")
 VIDEO_PATH  = BASE_DIR / "data/videos/vidR.mp4"
 OUTPUT_CSV  = BASE_DIR / "data/poses/poses.csv"
 MODEL_PATH  = BASE_DIR / "src/pose_landmarker_full.task"
@@ -29,7 +29,7 @@ def main():
     )
     validate_joint_map(test_joints)  # убедиться что все индексы верны
     '''
-    smpl = Skeleton(batch_size=50)
+    smpl = Skeleton(batch_size=60)
 
     print("Loading Optimizer...")
     optimizer = Optimizer(smpl)
@@ -51,7 +51,8 @@ def main():
 
     result = optimizer.optimize_video(
         frames,
-        generations=80
+        generations=80,
+        output_dir=OUTPUT_DIR
     )
 
     print()

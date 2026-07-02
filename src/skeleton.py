@@ -1,94 +1,79 @@
 # skeleton.py
-import torch
+from pathlib import Path
+
 import numpy as np
-from smplx import create
+import smplx
+import torch
+
+from src.config import DEVICE, get_device
 
 
 class Skeleton:
-
-    def __init__(self, model_path="src", batch_size=50):
-
+    def __init__(self, batch_size=1, device=None):
         self.batch_size = batch_size
-        self.device = torch.device(
-            "cuda" if torch.cuda.is_available() else "cpu"
-        )
+        self.device = get_device(device) if device is not None else DEVICE
 
-        self.model = create(
-            model_path=model_path,
+        model_path = Path(__file__).resolve().parent / "smplx" / "SMPLX_NEUTRAL.npz"
+        self.model = smplx.create(
+            model_path=str(model_path),
             model_type="smplx",
             gender="neutral",
+            use_face_contour=False,
+            num_betas=10,
+            num_expression_coeffs=10,
+            ext="npz",
             batch_size=batch_size,
-            use_pca=False,
-            flat_hand_mean=True
         ).to(self.device)
 
-        print(f"Skeleton device : {self.device}")
+        self.model.eval()
 
-        # Буферы — не создаём тензоры каждый раз
-        self._pose_buf   = torch.zeros(1, 63, device=self.device)
-        self._betas_buf  = torch.zeros(1, 10, device=self.device)
-        self._transl_buf = torch.zeros(1,  3, device=self.device)
-        self._orient_buf = torch.zeros(1,  3, device=self.device)
-
-    # ---------------------------------------------------------
+    def _to_tensor(self, arr, repeat=1):
+        """Конвертирует numpy массив в тензор на нужном устройстве"""
+        t = torch.tensor(arr, dtype=torch.float32, device=self.device)
+        if repeat > 1:
+            t = t.unsqueeze(0).repeat(repeat, 1)
+        else:
+            t = t.unsqueeze(0)
+        return t
 
     def forward(self, body_pose, betas, transl, global_orient):
-
-        self._pose_buf[0]   = torch.from_numpy(
-            body_pose.astype(np.float32)
-        )
-        self._betas_buf[0]  = torch.from_numpy(
-            betas.astype(np.float32)
-        )
-        self._transl_buf[0] = torch.from_numpy(
-            transl.astype(np.float32)
-        )
-        self._orient_buf[0] = torch.from_numpy(
-            global_orient.astype(np.float32)
-        )
-
-        with torch.no_grad():   # ГА не нуждается в градиентах
+        with torch.inference_mode():
             output = self.model(
-                body_pose=self._pose_buf,
-                global_orient=self._orient_buf,
-                transl=self._transl_buf,
-                betas=self._betas_buf,
-                return_verts=True
+                body_pose=self._to_tensor(body_pose),
+                betas=self._to_tensor(betas),
+                transl=self._to_tensor(transl),
+                global_orient=self._to_tensor(global_orient),
+                return_verts=True,
             )
-
-        vertices = output.vertices[0].cpu().numpy()
-        joints   = output.joints[0].cpu().numpy()
-
+        vertices = output.vertices.squeeze(0).cpu().numpy()
+        joints = output.joints.squeeze(0).cpu().numpy()
         return vertices, joints
-    
-    def forward_batch(self, chromosomes):
-        """
-        Принимает список хромосом, возвращает joints для всех сразу.
-        Один вызов SMPL вместо N вызовов.
-        """
 
-        n = len(chromosomes)
+    def forward_batch(self, individuals):
+        """Батчевый forward для всей популяции"""
+        body_pose = np.stack([ind.body_pose for ind in individuals])
+        betas = np.stack([ind.betas for ind in individuals])
+        transl = np.stack([ind.transl for ind in individuals])
+        global_orient = np.stack([ind.global_orient for ind in individuals])
 
-        body_pose     = np.stack([c.body_pose     for c in chromosomes])  # (n, 63)
-        betas         = np.stack([c.betas         for c in chromosomes])  # (n, 10)
-        transl        = np.stack([c.transl        for c in chromosomes])  # (n,  3)
-        global_orient = np.stack([c.global_orient for c in chromosomes])  # (n,  3)
-
-        pose_t   = torch.from_numpy(body_pose).float().to(self.device)
-        betas_t  = torch.from_numpy(betas).float().to(self.device)
-        transl_t = torch.from_numpy(transl).float().to(self.device)
-        orient_t = torch.from_numpy(global_orient).float().to(self.device)
-
-        with torch.no_grad():
-            output = self.model(
-                body_pose=pose_t,
-                global_orient=orient_t,
-                transl=transl_t,
-                betas=betas_t,
-                return_verts=False   # вершины не нужны для fitness
+        if len(individuals) != self.batch_size:
+            raise ValueError(
+                f"Batch size mismatch: expected {self.batch_size}, got {len(individuals)}"
             )
 
-        # (n, 127, 3) → на cpu
-        joints_batch = output.joints.cpu().numpy()
+        bp = torch.tensor(body_pose, dtype=torch.float32, device=self.device)
+        bt = torch.tensor(betas, dtype=torch.float32, device=self.device)
+        tr = torch.tensor(transl, dtype=torch.float32, device=self.device)
+        go = torch.tensor(global_orient, dtype=torch.float32, device=self.device)
 
-        return joints_batch  # (n, 127, 3)
+        with torch.inference_mode():
+            output = self.model(
+                body_pose=bp,
+                betas=bt,
+                transl=tr,
+                global_orient=go,
+                return_verts=True,
+            )
+
+        joints = output.joints.cpu().numpy()
+        return joints
