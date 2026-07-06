@@ -1,3 +1,4 @@
+#genetic.py
 import copy
 import random
 from dataclasses import dataclass
@@ -13,8 +14,8 @@ import numpy as np
 POPULATION_SIZE = 50 #для ускорения, вместо 100
 ELITE_COUNT = 5
 
-MUTATION_RATE = 0.15
-MUTATION_STD = 0.05
+MUTATION_RATE = 0.3
+MUTATION_STD = 0.08
 
 TOURNAMENT_SIZE = 5
 
@@ -227,37 +228,26 @@ class GeneticAlgorithm:
 
     def mutate(self, individual):
 
-        if random.random() < MUTATION_RATE:
+        # Каждый элемент мутирует независимо
+        mask = np.random.rand(3) < MUTATION_RATE
+        individual.transl[mask] += np.random.normal(
+            0, MUTATION_STD, mask.sum()
+        )
 
-            individual.transl += np.random.normal(
-                0,
-                MUTATION_STD,
-                3
-            )
+        mask = np.random.rand(3) < MUTATION_RATE
+        individual.global_orient[mask] += np.random.normal(
+            0, MUTATION_STD, mask.sum()
+        )
 
-        if random.random() < MUTATION_RATE:
+        mask = np.random.rand(POSE_SIZE) < MUTATION_RATE
+        individual.body_pose[mask] += np.random.normal(
+            0, MUTATION_STD, mask.sum()
+        )
 
-            individual.global_orient += np.random.normal(
-                0,
-                MUTATION_STD,
-                3
-            )
-
-        if random.random() < MUTATION_RATE:
-
-            individual.body_pose += np.random.normal(
-                0,
-                MUTATION_STD,
-                POSE_SIZE
-            )
-
-        if random.random() < MUTATION_RATE:
-
-            individual.betas += np.random.normal(
-                0,
-                MUTATION_STD,
-                BETAS_SIZE
-            )
+        mask = np.random.rand(BETAS_SIZE) < MUTATION_RATE
+        individual.betas[mask] += np.random.normal(
+            0, MUTATION_STD, mask.sum()
+        )
 
         return individual
     
@@ -296,34 +286,73 @@ class GeneticAlgorithm:
         self,
         fitness_function,
         measurements,
-        generations=100
+        generations=20,
+        patience=5        # стоп если N поколений без улучшения
     ):
 
-        self.evaluate(
-            fitness_function,
-            measurements
-        )
+        self.evaluate(fitness_function, measurements)
 
-        best = self.population.best()
-
-        print(
-            f"Generation 0  fitness={best.fitness:.6f}"
-        )
+        best         = self.population.best()
+        best_fitness = best.fitness
+        no_improve   = 0
 
         for generation in range(1, generations + 1):
 
             self.evolve()
-
-            self.evaluate(
-                fitness_function,
-                measurements
-            )
+            self.evaluate(fitness_function, measurements)
 
             best = self.population.best()
 
-            print(
-                f"Generation {generation:3d} fitness={best.fitness:.6f}"
-            )
+            if best.fitness < best_fitness - 1e-5:
+                best_fitness = best.fitness
+                no_improve   = 0
+            else:
+                no_improve  += 1
+
+            print(f"  Gen {generation:3d}  "
+                f"fitness={best.fitness:.4f}  "
+                f"patience={no_improve}/{patience}")
+
+            if no_improve >= patience:
+                print(f"  Early stop at gen {generation}")
+                break
+
+        return self.population.best()
+    
+    def run_batch(self, smpl_model, frame, generations=20, patience=5):
+        """
+        Версия run() которая использует evaluate_batch вместо evaluate.
+        """
+
+        # Первая оценка
+        self.evaluate_batch(smpl_model, frame)
+
+        best         = self.population.best()
+        best_fitness = best.fitness
+        no_improve   = 0
+
+        print(f"  Gen   0  fitness={best_fitness:.4f}")
+
+        for generation in range(1, generations + 1):
+
+            self.evolve()
+            self.evaluate_batch(smpl_model, frame)  # батч вместо поодиночке
+
+            best = self.population.best()
+
+            if best.fitness < best_fitness - 1e-5:
+                best_fitness = best.fitness
+                no_improve   = 0
+            else:
+                no_improve  += 1
+
+            print(f"  Gen {generation:3d}  "
+                f"fitness={best.fitness:.4f}  "
+                f"patience={no_improve}/{patience}")
+
+            if no_improve >= patience:
+                print(f"  Early stop at gen {generation}")
+                break
 
         return self.population.best()
     

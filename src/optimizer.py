@@ -1,5 +1,5 @@
 import numpy as np
-from src.genetic import GeneticAlgorithm, Chromosome, POPULATION_SIZE
+from src.genetic import GeneticAlgorithm, Chromosome, POPULATION_SIZE, POSE_SIZE
 from src.joint_mapper import get_corresponding_joints
 
 
@@ -9,10 +9,12 @@ class Optimizer:
         self.smpl = smpl_model
 
     # -------------------------------------------------
+    # Одиночная проверка — только для отладки
+    # -------------------------------------------------
 
     def fitness(self, chromosome, frame):
 
-        vertices, joints = self.smpl.forward(
+        _, joints = self.smpl.forward(
             body_pose=chromosome.body_pose,
             betas=chromosome.betas,
             transl=chromosome.transl,
@@ -20,18 +22,47 @@ class Optimizer:
         )
 
         mp_points, smpl_points = get_corresponding_joints(
-            frame["joints_3d"],
-            joints
+            frame["joints_3d"], joints
         )
 
         error = np.mean(
             np.linalg.norm(mp_points - smpl_points, axis=1)
         )
 
-        error += 0.01 * np.mean(chromosome.betas ** 2)
+        error += 0.01 * np.mean(chromosome.betas    ** 2)
         error += 0.01 * np.mean(chromosome.body_pose ** 2)
 
         return error
+
+    # -------------------------------------------------
+    # Warm start с разным уровнем мутации
+    # -------------------------------------------------
+
+    def _apply_warm_start(self, ga, warm_start):
+        """
+        Заполняем всю популяцию мутациями warm_start.
+        Разный масштаб мутации — сохраняем разнообразие.
+        """
+
+        individuals = ga.population.individuals
+        n           = len(individuals)
+
+        for i, individual in enumerate(individuals):
+
+            mutated = warm_start.clone()
+
+            # Масштаб мутации растёт от 0.02 до 0.25
+            # Первые особи — близко к warm_start (эксплуатация)
+            # Последние — далеко (исследование)
+            scale = 0.02 + (i / n) * 0.23
+
+            mutated.body_pose     += np.random.normal(0, scale, POSE_SIZE)
+            mutated.global_orient += np.random.normal(0, scale, 3)
+            mutated.transl        += np.random.normal(0, scale, 3)
+            mutated.betas         += np.random.normal(0, scale * 0.3, 10)
+            mutated.fitness        = np.inf
+
+            individuals[i] = mutated
 
     # -------------------------------------------------
 
@@ -39,45 +70,33 @@ class Optimizer:
         self,
         frame,
         generations=20,
-        warm_start=None   # <- лучшая хромосома предыдущего кадра
+        warm_start=None
     ):
-        ga = GeneticAlgorithm()  # свежий ГА на каждый кадр
+        # Рестарты убраны — warm_start достаточно
 
-        # Тёплый старт: заполняем популяцию мутациями предыдущего решения
+        ga = GeneticAlgorithm()
+
         if warm_start is not None:
-            half = len(ga.population.individuals) // 2
-            for i in range(half):
-                mutated = warm_start.clone()
-                ga.mutate(mutated)
-                ga.population.individuals[i] = mutated
+            self._apply_warm_start(ga, warm_start)
 
-        # Первая оценка
-        ga.evaluate_batch(self.smpl, frame)
+        best = ga.run_batch(
+            smpl_model=self.smpl,
+            frame=frame,
+            generations=generations,
+            patience=8    # было 5 — дать больше времени
+        )
 
-        best = ga.population.best()
-        print(f"  Gen   0  fitness={best.fitness:.4f}")
-
-        for gen in range(1, generations + 1):
-
-            ga.evolve()
-            ga.evaluate_batch(self.smpl, frame)  # <- батч вместо по одному
-
-            best = ga.population.best()
-            print(f"  Gen {gen:3d}  fitness={best.fitness:.4f}")
-
-        return ga.population.best()
+        return best
 
     # -------------------------------------------------
 
     def optimize_video(self, frames, generations=80):
 
-        result = []
-        prev_best = None  # храним лучшее решение предыдущего кадра
+        result    = []
+        prev_best = None
 
         for i, frame in enumerate(frames):
 
-            # Первый кадр — полная оптимизация
-            # Остальные — тёплый старт + меньше поколений
             gens = generations if i == 0 else 20
 
             print(f"\nFrame {i+1}/{len(frames)} "
