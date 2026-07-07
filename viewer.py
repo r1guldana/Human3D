@@ -5,8 +5,8 @@ import matplotlib.pyplot as plt
 # Загрузка
 # -----------------------------
 
-vertices = np.load("data/output/vertices1.npy")
-joints = np.load("data/output/joints1.npy")
+vertices = np.load("data/output/vertices.npy")
+joints = np.load("data/output/joints.npy")
 
 print("Vertices:", vertices.shape)
 print("Joints:", joints.shape)

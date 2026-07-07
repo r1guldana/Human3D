@@ -3,9 +3,10 @@ from src.skeleton import Skeleton
 from src.optimizer import Optimizer
 from pathlib import Path
 import numpy as np
+import pickle
 
 BASE_DIR    = Path(__file__).resolve().parent # Path("d:/Human3D")
-VIDEO_PATH  = BASE_DIR / "data/videos/vidR.mp4"
+VIDEO_PATH  = BASE_DIR / "data/videos/vidR1.mp4"
 MODEL_PATH  = BASE_DIR / "src/pose_landmarker_full.task"
 OUTPUT_DIR  = BASE_DIR / "data/output"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -66,6 +67,35 @@ def main():
     np.save(OUTPUT_DIR / "joints.npy",   joints)
 
     print(f"\nSaved to {OUTPUT_DIR}")
+
+    # Сохранение всех фреймов в 3Д
+
+    print("Saving all frames...")
+
+    all_vertices = []
+
+    for i, best in enumerate(result):
+        vertices, _ = smpl.forward(
+            body_pose=best.body_pose,
+            betas=best.betas,
+            transl=best.transl,
+            global_orient=best.global_orient
+        )
+        all_vertices.append(vertices)
+
+        if i % 10 == 0:
+            print(f"  Rendered {i+1}/{len(result)}")
+
+    all_vertices = np.stack(all_vertices)  # (100, 10475, 3)
+
+    np.save(OUTPUT_DIR / "all_vertices.npy", all_vertices)
+
+    # Сохранить faces отдельно
+    faces = smpl.model_single.faces  # (20908, 3)
+    np.save(OUTPUT_DIR / "faces.npy", faces)
+
+    print(f"Saved all_vertices: {all_vertices.shape}")
+    print(f"Saved faces:        {faces.shape}")
 
 
 if __name__ == "__main__":

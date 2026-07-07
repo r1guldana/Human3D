@@ -3,4 +3,4 @@ opencv-python
 mediapipe
 torch
 smplx
-
+pip install trimesh pyglet numpy  #viewer3d
