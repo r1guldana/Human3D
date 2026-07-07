@@ -3,6 +3,7 @@ import copy
 import random
 from dataclasses import dataclass
 from src.joint_mapper import get_corresponding_joints
+from src.fitness import compute_fitness_batch
 
 import numpy as np
 
@@ -14,8 +15,8 @@ import numpy as np
 POPULATION_SIZE = 50 #для ускорения, вместо 100
 ELITE_COUNT = 5
 
-MUTATION_RATE = 0.3
-MUTATION_STD = 0.08
+MUTATION_RATE = 0.4
+MUTATION_STD = 0.1
 
 TOURNAMENT_SIZE = 5
 
@@ -145,34 +146,21 @@ class GeneticAlgorithm:
                 measurements
             )
     
-    def evaluate_batch(self, smpl_model, frame):
-        """
-        Оценивает всю популяцию за один batched forward pass.
-        """
+    def evaluate_batch(self, smpl_model, frame, prev_chromosome=None):
 
-        individuals = self.population.individuals
-        n = len(individuals)
+        joints_batch = smpl_model.forward_batch(
+            self.population.individuals
+        )  # (n, 127, 3)
 
-        # Батчевый forward
-        joints_batch = smpl_model.forward_batch(individuals)  # (n, 127, 3)
+        fitnesses = compute_fitness_batch(
+            chromosomes=self.population.individuals,
+            mp_joints=frame["joints_3d"],
+            joints_batch=joints_batch,
+            prev_chromosome=prev_chromosome
+        )
 
-        mp_joints = frame["joints_3d"]  # (33, 3)
-
-        for i, individual in enumerate(individuals):
-
-            mp_pts, smpl_pts = get_corresponding_joints(
-                mp_joints,
-                joints_batch[i]   # (127, 3)
-            )
-
-            error = np.mean(
-                np.linalg.norm(mp_pts - smpl_pts, axis=1)
-            )
-
-            error += 0.01 * np.mean(individual.betas     ** 2)
-            error += 0.01 * np.mean(individual.body_pose ** 2)
-
-            individual.fitness = float(error)
+        for individual, fit in zip(self.population.individuals, fitnesses):
+            individual.fitness = fit
 
     # ----------------------------------------------------
 

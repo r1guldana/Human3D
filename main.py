@@ -4,7 +4,7 @@ from src.optimizer import Optimizer
 from pathlib import Path
 import numpy as np
 
-BASE_DIR    = Path("d:/Disseratation/Human3D")
+BASE_DIR    = Path(__file__).resolve().parent # Path("d:/Human3D")
 VIDEO_PATH  = BASE_DIR / "data/videos/vidR.mp4"
 MODEL_PATH  = BASE_DIR / "src/pose_landmarker_full.task"
 OUTPUT_DIR  = BASE_DIR / "data/output"
