@@ -101,7 +101,7 @@ class PoseDetector:
                     )
                     joints3d[i] = (
                         pose3d[i].x,
-                        pose3d[i].y,
+                        -pose3d[i].y,  # инвертирование координат Y
                         pose3d[i].z
                     )
                     visibility[i] = (
